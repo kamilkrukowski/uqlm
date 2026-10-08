@@ -247,6 +247,32 @@ def test_extract_score_continuous_nan():
     assert np.isnan(score)
 
 
+@pytest.mark.parametrize("text,expected", [("0.8", 0.8), ("1.0", 1.0), ("85.5", 0.855), ("0.85.", 0.85)])
+def test_extract_score_continuous_decimals(text, expected):
+    """Regression: continuous parser concatenated all digits, so "0.8" scored 0.08 and "85.5" scored NaN."""
+    judge = LLMJudge(llm=None, scoring_template="continuous")
+    assert judge._extract_score_from_text(text) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("text", ["150", "-5", "100.5"])
+def test_extract_score_continuous_out_of_range(text):
+    judge = LLMJudge(llm=None, scoring_template="continuous")
+    assert np.isnan(judge._extract_score_from_text(text))
+
+
+@pytest.mark.parametrize("text", ["On a scale of 0 to 100, I'd give 85", "Confidence (0-100): 72", "1. The answer is correct. Score: 90", "2 + 2 = 4 is correct: 100", "between 80-90", "I'm 95% sure; maybe 90", "Score: 8, 5", "85/100", ""])
+def test_extract_score_continuous_ambiguous(text):
+    """Responses with no number or several (e.g. an echoed "0 to 100" scale) must be NaN so they are retried, not mis-scored."""
+    judge = LLMJudge(llm=None, scoring_template="continuous")
+    assert np.isnan(judge._extract_score_from_text(text))
+
+
+def test_parse_structured_response_continuous_ignores_explanation_numbers():
+    judge = LLMJudge(llm=None, scoring_template="continuous")
+    score, _ = judge._parse_structured_response("Score: 0.8\nExplanation: 2 of 3 cited facts check out")
+    assert score == pytest.approx(0.8)
+
+
 def test_extract_score_true_false_nan():
     judge = LLMJudge(llm=None, scoring_template="true_false_uncertain")
     score = judge._extract_score_from_text("completely unrelated")

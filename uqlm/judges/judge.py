@@ -15,6 +15,7 @@
 
 import contextlib
 import io
+import re
 
 import numpy as np
 import pandas as pd
@@ -210,12 +211,16 @@ class LLMJudge(ResponseGenerator):
         Used for both structured responses and backward compatibility.
         """
         if self.scoring_template == "continuous":
-            # Extract all digits and decimal points
-            score = "".join(c for c in response if c.isdigit())
-            if len(score) > 0:
-                score_val = float(score)
-                if 0.0 <= score_val <= 100.0:
-                    return score_val / 100.0  # normalize
+            # A decimal point needs digits on both sides, so sentence full stops ("85. Correct.") are not decimals
+            tokens = re.findall(r"-?\d+(?:\.\d+)?", response)
+            if len(tokens) != 1:
+                return np.nan  # no number, or ambiguous (e.g. echoed "0 to 100" scale): let the retry loop re-ask
+            token = tokens[0]
+            score_val = float(token)
+            if "." in token and 0.0 <= score_val <= 1.0:
+                return score_val  # decimal in [0, 1] is already normalized
+            if 0.0 <= score_val <= 100.0:
+                return score_val / 100.0  # normalize 0-100 scale
             return np.nan
 
         elif self.scoring_template == "likert":
